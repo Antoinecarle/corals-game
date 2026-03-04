@@ -1,0 +1,12 @@
+{
+  "name": "pirate-mmo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "client",
+    "server",
+    "backoffice",
+    "backoffice/server"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_dde44383ee9bce127fdf1c860cb696d72f50fdfc"
+      ]
+    },
+    "railway": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@railway/mcp-server"
+      ],
+      "env": {
+        "RAILWAY_API_TOKEN": "040dd105-5412-4a6a-bf2e-55cb64f5e0a7"
+      }
+    }
+  }
+}

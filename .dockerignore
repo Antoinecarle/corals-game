@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+core
+core.*
+*.core
+.git/
+backoffice-*.png
+game-*.png
+terrain-*.png
+tide-*.png

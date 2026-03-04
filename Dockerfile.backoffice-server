@@ -1,0 +1,7 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY . .
+RUN npm install
+EXPOSE 3003
+WORKDIR /app/backoffice/server
+CMD ["npx", "tsx", "src/index.ts"]
