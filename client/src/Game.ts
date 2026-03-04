@@ -14,8 +14,7 @@ import { GameLoop } from './core/GameLoop.js';
 import { InputManager } from './core/InputManager.js';
 import { IsoChunkManager } from './iso/IsoChunkManager.js';
 import { GridCollision } from './movement/GridCollision.js';
-import { Pathfinder } from './movement/Pathfinder.js';
-import { MovementController } from './movement/MovementController.js';
+import { FreeMovementController } from './movement/FreeMovementController.js';
 import { Player } from './entities/Player.js';
 import { DepthSorter } from './rendering/DepthSorter.js';
 import { NetworkManager } from './network/NetworkManager.js';
@@ -117,9 +116,8 @@ export class Game {
     tileMap.buildAll();
     this.tileMap = tileMap;
 
-    // Collision + pathfinding
+    // Collision grid
     const collision = new GridCollision(tileMap.getWalkable(), tileMap.getSize());
-    const pathfinder = new Pathfinder(collision);
 
     // Get assets for player/npc frames
     const assets = this.chunkManager.getAssets()!;
@@ -127,8 +125,20 @@ export class Game {
     // Spawn player at center
     const spawnX = 128;
     const spawnY = 128;
-    const movement = new MovementController(spawnX, spawnY, pathfinder);
+    const movement = new FreeMovementController(spawnX, spawnY, collision);
     this.player = new Player(spawnX, spawnY, playerName, movement, assets.playerFrames);
+
+    // ── WASD keyboard input ──
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      // Prevent page scroll on arrow keys
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+      }
+      movement.keyDown(e.key);
+    });
+    window.addEventListener('keyup', (e: KeyboardEvent) => {
+      movement.keyUp(e.key);
+    });
     this.entityContainer.addChild(this.player.container);
 
     // Center camera on player
@@ -137,6 +147,13 @@ export class Game {
 
     // Network + StateSync
     this.network = new NetworkManager();
+
+    // Wire position updates to server (throttled inside FreeMovementController)
+    movement.setPositionUpdateCallback((x, y) => {
+      if (this.connected) {
+        this.network.sendMove(Math.round(x), Math.round(y));
+      }
+    });
 
     // Admin mode
     this.adminMode = new AdminMode(container, tileMap, this.network);
@@ -159,13 +176,7 @@ export class Game {
         }
       }
 
-      // Allow movement even when chat is focused — UI overlay has pointer-events:none on wrapper
-      if (tileMap.isWalkable(tileX, tileY)) {
-        this.player.moveTo(tileX, tileY);
-        if (this.connected) {
-          this.network.sendMove(tileX, tileY);
-        }
-      }
+      // Click-to-teleport is removed (WASD movement). Click still activates siphon/admin.
     });
 
     // Hover for admin ghost preview

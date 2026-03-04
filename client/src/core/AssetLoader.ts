@@ -1,5 +1,5 @@
 import { Graphics, Application, Texture } from 'pixi.js';
-import { TILE_WIDTH, TILE_HEIGHT, Direction } from '@pirate-mmo/shared';
+import { TILE_WIDTH, TILE_HEIGHT } from '@pirate-mmo/shared';
 
 const HALF_W = TILE_WIDTH / 2;  // 32
 const HALF_H = TILE_HEIGHT / 2; // 16
@@ -412,70 +412,252 @@ export class AssetLoader {
     return decos;
   }
 
-  // ---- Character frames (unchanged) ----
+  // ---- Voxel Pirate Character Frames ----
 
   private generateCharacterFrames(
     app: Application,
     bodyColor: number,
-    darkColor: number
+    _darkColor: number,
   ): Map<string, Texture> {
+    // Determine palette from body color hue (warm=player, cool=NPC)
+    const isPlayer = ((bodyColor >> 16) & 0xff) > ((bodyColor >> 0) & 0xff);
+    const pal = isPlayer
+      ? { skin: 0xffcc99, skinDark: 0xd89060, hair: 0x1a0e05, coat: 0x1e3054, pants: 0x1a1828, boot: 0x1a0e08, gold: 0xd4a030, belt: 0x5a3a10 }
+      : { skin: 0xe8b888, skinDark: 0xc07848, hair: 0x2a1a08, coat: 0x5a1010, pants: 0x1a1828, boot: 0x1a0e08, gold: 0xc8a020, belt: 0x5a3a10 };
+
     const frames = new Map<string, Texture>();
-    const directions = [
-      Direction.South, Direction.SouthWest, Direction.West, Direction.NorthWest,
-      Direction.North, Direction.NorthEast, Direction.East, Direction.SouthEast,
-    ];
     const dirNames = ['S', 'SW', 'W', 'NW', 'N', 'NE', 'E', 'SE'];
-
-    const dirOffsets: Record<string, { dx: number; dy: number }> = {
-      S:  { dx: 0, dy: 4 },
-      SW: { dx: -3, dy: 3 },
-      W:  { dx: -4, dy: 0 },
-      NW: { dx: -3, dy: -3 },
-      N:  { dx: 0, dy: -4 },
-      NE: { dx: 3, dy: -3 },
-      E:  { dx: 4, dy: 0 },
-      SE: { dx: 3, dy: 3 },
-    };
-
-    for (let d = 0; d < directions.length; d++) {
-      const dirName = dirNames[d];
-      const offset = dirOffsets[dirName];
-      frames.set(`idle_0_${dirName}`, this.generateCharFrame(app, bodyColor, darkColor, offset, 0));
+    for (const dn of dirNames) {
+      frames.set(`idle_0_${dn}`, this.generateVoxelCharFrame(app, pal, dn, 0));
       for (let f = 0; f < 4; f++) {
-        frames.set(`walk_${f}_${dirName}`, this.generateCharFrame(app, bodyColor, darkColor, offset, f));
+        frames.set(`walk_${f}_${dn}`, this.generateVoxelCharFrame(app, pal, dn, f));
       }
     }
-
     return frames;
   }
 
-  private generateCharFrame(
-    app: Application,
-    bodyColor: number,
-    darkColor: number,
-    dirOffset: { dx: number; dy: number },
-    walkFrame: number
-  ): Texture {
-    const g = new Graphics();
-    const SIZE = 24;
-    const cx = SIZE / 2;
-    const bob = walkFrame > 0 ? Math.sin((walkFrame / 4) * Math.PI * 2) * 2 : 0;
-    const cy = SIZE / 2 + bob;
+  /**
+   * Draws an isometric voxel block with 3 visible faces (top/front/side).
+   * @param dr  true = depth goes right (S/SE/E facing), false = depth goes left
+   */
+  private voxBlock(
+    g: Graphics,
+    x: number, y: number, w: number, h: number,
+    color: number,
+    d = 3,
+    dr = true,
+  ): void {
+    const vd = d / 2;
+    const tc = this.toneColor(color, 1.42);
+    const sc = this.toneColor(color, 0.58);
+    const sd = dr ? 1 : -1;
 
+    // Top cap parallelogram
     g.poly([
-      { x: cx, y: cy - 10 },
-      { x: cx + 7, y: cy },
-      { x: cx, y: cy + 6 },
-      { x: cx - 7, y: cy },
+      { x: x,               y: y       },
+      { x: x + w,           y: y       },
+      { x: x + w + sd * d,  y: y - vd  },
+      { x: x + sd * d,      y: y - vd  },
     ]);
-    g.fill(bodyColor);
-    g.stroke({ width: 1, color: darkColor });
+    g.fill(tc);
 
-    g.circle(cx + dirOffset.dx, cy + dirOffset.dy - 2, 2);
-    g.fill(0xffffff);
+    // Front face
+    g.rect(x, y, w, h);
+    g.fill(color);
 
-    g.ellipse(cx, cy + 8, 6, 2);
-    g.fill({ color: 0x000000, alpha: 0.3 });
+    // Side face
+    if (dr) {
+      g.poly([
+        { x: x + w,         y: y          },
+        { x: x + w + d,     y: y - vd     },
+        { x: x + w + d,     y: y - vd + h },
+        { x: x + w,         y: y + h      },
+      ]);
+    } else {
+      g.poly([
+        { x: x,             y: y          },
+        { x: x - d,         y: y - vd     },
+        { x: x - d,         y: y - vd + h },
+        { x: x,             y: y + h      },
+      ]);
+    }
+    g.fill(sc);
+  }
+
+  private toneColor(c: number, f: number): number {
+    const r = Math.min(255, Math.max(0, Math.round(((c >> 16) & 0xff) * f)));
+    const gv = Math.min(255, Math.max(0, Math.round(((c >> 8) & 0xff) * f)));
+    const b = Math.min(255, Math.max(0, Math.round((c & 0xff) * f)));
+    return (r << 16) | (gv << 8) | b;
+  }
+
+  /**
+   * Generates a single voxel pirate character sprite frame.
+   * Canvas: 40×56px, anchor (0.5, 0.75) = ground at y=42.
+   *
+   * Walk frames: 0=neutral, 1=right-leg-forward, 2=neutral, 3=left-leg-forward
+   */
+  private generateVoxelCharFrame(
+    app: Application,
+    pal: { skin: number; skinDark: number; hair: number; coat: number; pants: number; boot: number; gold: number; belt: number },
+    dirName: string,
+    frame: number,
+  ): Texture {
+    const W = 40, H = 56;
+    const g = new Graphics();
+    const GY = 42; // ground line (anchor point)
+
+    // Walk swing offsets
+    const rLegY = frame === 1 ? 3  : frame === 3 ? -2 : 0;
+    const lLegY = frame === 1 ? -2 : frame === 3 ? 3  : 0;
+    const rArmY = -rLegY;
+    const lArmY = -lLegY;
+    const bob   = (frame === 1 || frame === 3) ? 1 : 0;
+
+    // Direction flags
+    const isE      = dirName === 'E';
+    const isW      = dirName === 'W';
+    const isSide   = isE || isW;
+    const showFace = dirName === 'S' || dirName === 'SE' || dirName === 'SW';
+    const isNorth  = dirName === 'N' || dirName === 'NE' || dirName === 'NW';
+    // Depth goes right for S/SE/NE/E, left for N/NW/SW/W
+    const dr = dirName === 'S' || dirName === 'SE' || dirName === 'NE' || dirName === 'E';
+    // Dim factor for back-facing
+    const dimF = isNorth
+      ? 0.76
+      : (dirName === 'NW' || dirName === 'NE') ? 0.84 : 1.0;
+
+    // Tone helper with dim baked in
+    const T = (c: number, f: number) => this.toneColor(c, f * dimF);
+    const VB = (x: number, y: number, w: number, h: number, c: number, d = 3) =>
+      this.voxBlock(g, x, y, w, h, c, d, dr);
+
+    const D = isSide ? 2 : 3; // depth pixels
+
+    // ── Shadow ──
+    g.ellipse(W / 2, GY + 6, 13, 3.5);
+    g.fill({ color: 0x000000, alpha: 0.28 * dimF });
+
+    if (!isSide) {
+      // ════════════ FRONT / BACK / DIAGONAL VIEW ════════════
+      const bw = (dirName === 'S' || dirName === 'N') ? 20 : 16;
+      const bx = Math.floor(W / 2 - bw / 2);
+      const legW = 9;
+      const lLegX = Math.floor(W / 2) - 1 - legW;
+      const rLegX = Math.floor(W / 2) + 1;
+
+      // Which leg is "back" (drawn first, partially hidden)
+      const rightIsBack = (frame !== 3);
+      const backLX  = rightIsBack ? rLegX : lLegX;
+      const frontLX = rightIsBack ? lLegX : rLegX;
+      const bkLOff  = rightIsBack ? rLegY : lLegY;
+      const ftLOff  = rightIsBack ? lLegY : rLegY;
+
+      // ── Back boot + leg ──
+      VB(backLX, GY - 7 + bkLOff,  legW, 7,  T(pal.boot,  0.72), D);
+      VB(backLX, GY - 19 + bkLOff, legW, 12, T(pal.pants, 0.82), D);
+
+      // ── Back arm ──
+      const bkArmX = dr ? bx - 7 : bx + bw;
+      const bkArmY = GY - 27 - bob + (dr ? lArmY : rArmY);
+      VB(bkArmX, bkArmY,      7, 13, T(pal.coat, 0.78), D);
+      VB(bkArmX, bkArmY + 10, 7, 3,  T(pal.gold, 0.65), D);
+
+      // ── Body ──
+      VB(bx, GY - 29 - bob, bw, 16, T(pal.coat, 1.0), D);
+      // Gold buttons
+      for (const gy of [GY - 23 - bob, GY - 18 - bob]) {
+        g.circle(W / 2, gy, 1.5);
+        g.fill(T(pal.gold, 1.0));
+      }
+      // Belt
+      g.rect(bx, GY - 14 - bob, bw, 3);
+      g.fill(T(pal.belt, 1.0));
+
+      // ── Front arm ──
+      const ftArmX = dr ? bx + bw : bx - 7;
+      const ftArmY = GY - 27 - bob + (dr ? rArmY : lArmY);
+      VB(ftArmX, ftArmY,      7, 13, T(pal.coat, 1.05), D);
+      VB(ftArmX, ftArmY + 10, 7, 3,  T(pal.gold, 0.92), D);
+
+      // ── Front boot + leg ──
+      VB(frontLX, GY - 7 + ftLOff,  legW, 7,  T(pal.boot,  1.0), D);
+      VB(frontLX, GY - 19 + ftLOff, legW, 12, T(pal.pants, 1.0), D);
+
+      // ── Neck ──
+      g.rect(W / 2 - 4, GY - 32 - bob, 8, 4);
+      g.fill(T(pal.skin, 0.95));
+
+      // ── Head ──
+      const hw = bw + 2;
+      const hx = Math.floor(W / 2 - hw / 2);
+      const hy = GY - 45 - bob;
+      VB(hx, hy, hw, 13, T(pal.skin, 1.0), D);
+
+      // Hair cap
+      VB(hx - 1, hy - 4, hw + 2, 5, T(pal.hair, 1.0), D);
+
+      // ── Face (front-facing only) ──
+      if (showFace) {
+        // Left eye
+        g.rect(hx + 3, hy + 3, 4, 4);
+        g.fill(0xf4e8d8);
+        g.rect(hx + 4, hy + 4, 2, 2);
+        g.fill(T(0x1a1a2a, 1.0));
+        // Right eye
+        g.rect(hx + hw - 7, hy + 3, 4, 4);
+        g.fill(0xf4e8d8);
+        g.rect(hx + hw - 6, hy + 4, 2, 2);
+        g.fill(T(0x1a1a2a, 1.0));
+        // Nose
+        g.circle(W / 2, hy + 8, 1);
+        g.fill(T(pal.skinDark, 0.9));
+      }
+
+    } else {
+      // ════════════ SIDE VIEW (E / W) ════════════
+      const bw = 10;
+      const bx = isE ? (W / 2 - bw / 2 + 1) : (W / 2 - bw / 2 - 1);
+      const legPhase = frame === 1 ? 3 : frame === 3 ? -3 : 0;
+      const bkShift = isE ? 2 : -2;
+
+      // Back leg (darker, slightly behind)
+      VB(bx + bkShift, GY - 7,  bw - 3, 7,  T(pal.boot,  0.62), D);
+      VB(bx + bkShift, GY - 19, bw - 3, 12, T(pal.pants, 0.68), D);
+
+      // Body
+      VB(bx, GY - 29 - bob, bw, 16, T(pal.coat, 1.0), D);
+
+      // Near arm (swings with animation)
+      const armY = GY - 27 - bob + (frame === 1 ? -2 : frame === 3 ? 2 : 0);
+      VB(bx, armY,      bw - 2, 12, T(pal.coat, 0.82), D);
+      VB(bx, armY + 9,  bw - 2, 3,  T(pal.gold, 0.78), D);
+
+      // Front leg
+      VB(bx, GY - 7  + legPhase, bw - 1, 7,  T(pal.boot,  1.0), D);
+      VB(bx, GY - 19 + legPhase, bw - 1, 12, T(pal.pants, 1.0), D);
+
+      // Neck
+      g.rect(bx + 1, GY - 32 - bob, 6, 4);
+      g.fill(T(pal.skin, 0.95));
+
+      // Head
+      VB(bx - 1, GY - 45 - bob, bw + 2, 13, T(pal.skin, 1.0), D);
+
+      // Hair
+      VB(bx - 2, GY - 49 - bob, bw + 4, 5, T(pal.hair, 1.0), D);
+
+      // Side eye
+      const eyeX = isE ? bx + bw - 3 : bx + 1;
+      const eyeY = GY - 42 - bob;
+      g.rect(eyeX, eyeY, 3, 3);
+      g.fill(0xf4e8d8);
+      g.rect(eyeX + (isE ? 1 : 0), eyeY + 1, 1, 1);
+      g.fill(T(0x1a1a2a, 1.0));
+    }
+
+    // Suppress unused-var lint for H (used implicitly by canvas bounds)
+    void H;
 
     const texture = app.renderer.generateTexture(g);
     g.destroy();

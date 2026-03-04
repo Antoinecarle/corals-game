@@ -6,7 +6,7 @@ dist/
 .DS_Store
 
 # Core dumps & system files
-core
+/core
 core.*
 *.core
 

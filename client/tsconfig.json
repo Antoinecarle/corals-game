@@ -7,9 +7,20 @@
     "declaration": false,
     "declarationMap": false,
     "paths": {
-      "@pirate-mmo/shared": ["../shared/src"]
-    }
+      "@pirate-mmo/shared": [
+        "../shared/src"
+      ]
+    },
+    "types": [
+      "vite/client"
+    ]
   },
-  "include": ["src/**/*"],
-  "references": [{ "path": "../shared" }]
+  "include": [
+    "src/**/*"
+  ],
+  "references": [
+    {
+      "path": "../shared"
+    }
+  ]
 }
