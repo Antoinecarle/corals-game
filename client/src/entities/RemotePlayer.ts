@@ -1,7 +1,7 @@
 import type { Texture } from 'pixi.js';
 import type { Direction } from '@pirate-mmo/shared';
 import { Entity } from './Entity.js';
-import { AnimationManager } from '../rendering/AnimationManager.js';
+import { AnimationController } from '../rendering/AnimationController.js';
 import { NameLabel } from '../rendering/NameLabel.js';
 
 /**
@@ -9,7 +9,7 @@ import { NameLabel } from '../rendering/NameLabel.js';
  * interpolates between them for smooth movement.
  */
 export class RemotePlayer extends Entity {
-  private animator: AnimationManager;
+  private animator: AnimationController;
   private nameLabel: NameLabel;
   private targetX: number;
   private targetY: number;
@@ -26,7 +26,7 @@ export class RemotePlayer extends Entity {
     this.targetX = tileX;
     this.targetY = tileY;
 
-    this.animator = new AnimationManager(frames);
+    this.animator = new AnimationController(frames);
     this.nameLabel = new NameLabel(name);
     this.container.addChild(this.nameLabel.getText());
 
@@ -42,6 +42,8 @@ export class RemotePlayer extends Entity {
     this.targetY = y;
     this.direction = direction;
     this.isMoving = animation === 'walk';
+    // Forward any server-driven animation state (attack, hurt, death, etc.)
+    this.animator.setState(animation);
   }
 
   /**
@@ -62,8 +64,7 @@ export class RemotePlayer extends Entity {
       this.tileY = this.targetY;
     }
 
-    // Update animation
-    this.animator.setState(this.isMoving ? 'walk' : 'idle');
+    // Update direction; state is set by setServerState() to support attack/hurt/death
     this.animator.setDirection(this.direction);
     this.animator.update(dt);
 

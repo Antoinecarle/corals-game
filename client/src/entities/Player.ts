@@ -1,7 +1,7 @@
 import type { Texture } from 'pixi.js';
 import { Entity } from './Entity.js';
 import type { FreeMovementController } from '../movement/FreeMovementController.js';
-import { AnimationManager } from '../rendering/AnimationManager.js';
+import { AnimationController } from '../rendering/AnimationController.js';
 import { NameLabel } from '../rendering/NameLabel.js';
 
 /**
@@ -9,7 +9,7 @@ import { NameLabel } from '../rendering/NameLabel.js';
  */
 export class Player extends Entity {
   private movement: FreeMovementController;
-  private animator: AnimationManager;
+  private animator: AnimationController;
   private nameLabel: NameLabel;
 
   constructor(
@@ -21,7 +21,7 @@ export class Player extends Entity {
   ) {
     super(tileX, tileY);
     this.movement = movement;
-    this.animator = new AnimationManager(frames);
+    this.animator = new AnimationController(frames);
     this.nameLabel = new NameLabel(name);
     this.container.addChild(this.nameLabel.getText());
 
@@ -47,5 +47,10 @@ export class Player extends Entity {
 
   getMovement(): FreeMovementController {
     return this.movement;
+  }
+
+  /** Expose animator for hot-swapping spritesheet frames or triggering one-shot states (attack, hurt…). */
+  getAnimator(): AnimationController {
+    return this.animator;
   }
 }

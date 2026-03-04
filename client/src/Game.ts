@@ -27,8 +27,11 @@ import { ObstacleType } from './iso/MapGenerator.js';
 import { IsoTileMap } from './iso/IsoTileMap.js';
 import { TideManager } from './tide/TideManager.js';
 import { SiphonEntity } from './tide/SiphonEntity.js';
+import { SiphonChannelBar } from './tide/SiphonChannelBar.js';
 import { TidePillarEntity } from './tide/TidePillarEntity.js';
 import { LootDropEntity } from './tide/LootDrop.js';
+import { ZoneBanner } from './ui/ZoneBanner.js';
+import { AbyssalSwarm } from './entities/AbyssalSwarm.js';
 /**
  * Main game orchestrator.
  */
@@ -52,11 +55,19 @@ export class Game {
   // Tide system
   private tideManager!: TideManager;
   private siphonEntity!: SiphonEntity;
+  private siphonChannelBar!: SiphonChannelBar;
   private tidePillarEntity!: TidePillarEntity;
   private lootDropEntities: Map<string, LootDropEntity> = new Map();
   private wasNearPillar = false;
   private wasNearSiphon = false;
   private offlineLootTimer = 0; // seconds since last loot spawn (offline mode)
+
+  // Zone crossing detection
+  private zoneBanner!: ZoneBanner;
+  private prevZoneType: 'bastion' | 'palier1' = 'bastion';
+
+  // Abyssal swarms (Palier 1 enemies)
+  private abyssalSwarms: AbyssalSwarm[] = [];
 
   private playerName: string = '';
   private currentZoneX = 0;
@@ -166,12 +177,14 @@ export class Game {
         return;
       }
 
-      // Check siphon click
+      // Check siphon click — start 3s channeling
       if (this.tideManager.isNearSiphon(this.player.getTileX(), this.player.getTileY())) {
         const sdx = tileX - SIPHON_1_POS.x;
         const sdy = tileY - SIPHON_1_POS.y;
         if (Math.sqrt(sdx * sdx + sdy * sdy) <= 2) {
-          this.tideManager.openSiphon();
+          if (!this.siphonChannelBar.isActive()) {
+            this.siphonChannelBar.start();
+          }
           return;
         }
       }
@@ -258,6 +271,14 @@ export class Game {
     const tm = this.tideManager;
     const ui = this.uiManager;
 
+    // Siphon cast bar — completes → opens siphon panel
+    this.siphonChannelBar = new SiphonChannelBar(ui.getRoot(), () => {
+      tm.openSiphon();
+    });
+
+    // Zone crossing banner
+    this.zoneBanner = new ZoneBanner(ui.getRoot());
+
     // Network callbacks — offline simulation if not connected
     tm.setNetworkCallbacks(
       (palier) => {
@@ -310,6 +331,10 @@ export class Game {
         );
       } else if (state === TideState.IN_TIDE) {
         ui.getSiphonPanel().close();
+        // Spawn Essaims when tide begins
+        if (this.abyssalSwarms.length === 0) {
+          this.spawnAbyssalSwarms();
+        }
       } else if (state === TideState.NONE) {
         ui.getSiphonPanel().close();
         ui.getTideHUD().hide();
@@ -346,6 +371,9 @@ export class Game {
         entity.destroy();
       }
       this.lootDropEntities.clear();
+
+      // Despawn swarms
+      this.despawnAbyssalSwarms();
 
       // Teleport player to bastion center
       this.player.getMovement().setPosition(TIDE_PILLAR_POS.x, TIDE_PILLAR_POS.y);
@@ -430,6 +458,38 @@ export class Game {
     const px = this.player.getTileX();
     const py = this.player.getTileY();
     const tm = this.tideManager;
+
+    // Siphon cast bar — cancel if player moves
+    if (this.siphonChannelBar.isActive()) {
+      if (this.player.getMovement().getIsMoving()) {
+        this.siphonChannelBar.cancel();
+        this.uiManager.notify('Canalisation interrompue', 'warning');
+      } else {
+        this.siphonChannelBar.update(dt);
+      }
+    }
+
+    // Zone crossing notification
+    const curZone = tm.getZoneType(px, py);
+    if (curZone !== this.prevZoneType) {
+      if (curZone === 'palier1') {
+        this.zoneBanner.show('Eaux Calmes', 'Palier 1 — Marée active');
+      } else if (curZone === 'bastion') {
+        this.zoneBanner.show('Ancrage', 'Zone sûre');
+      }
+      this.prevZoneType = curZone;
+    }
+    this.zoneBanner.update(dt);
+
+    // Update Abyssal Swarms
+    for (const swarm of this.abyssalSwarms) {
+      swarm.update(dt, px, py);
+      // Cancel siphon channeling if a swarm is too close
+      if (this.siphonChannelBar.isActive() && swarm.isInterrupting(px, py)) {
+        this.siphonChannelBar.cancel();
+        this.uiManager.notify('Canalisation interrompue par un Abyssal !', 'warning');
+      }
+    }
 
     // Update tide entities
     this.siphonEntity.update(dt);
@@ -611,5 +671,31 @@ export class Game {
       lootKept: [...tm.getBankedLoot()],
       lootLost: [...tm.getCarriedLoot()],
     });
+  }
+
+  // ─── Abyssal Swarms ───
+
+  private spawnAbyssalSwarms(): void {
+    // 4 swarms scattered in Palier 1 (outside bastion, but not too far)
+    const spawnPoints = [
+      { x: 90, y: 85 },
+      { x: 170, y: 90 },
+      { x: 85, y: 170 },
+      { x: 165, y: 165 },
+    ];
+    for (const sp of spawnPoints) {
+      const swarm = new AbyssalSwarm(sp.x, sp.y);
+      this.entityContainer.addChild(swarm.container);
+      this.abyssalSwarms.push(swarm);
+    }
+    this.uiManager.notify('Des Essaims d\'Abyssaux rodent dans les Eaux Calmes…', 'warning');
+  }
+
+  private despawnAbyssalSwarms(): void {
+    for (const swarm of this.abyssalSwarms) {
+      this.entityContainer.removeChild(swarm.container);
+      swarm.destroy();
+    }
+    this.abyssalSwarms = [];
   }
 }
