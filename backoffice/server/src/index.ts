@@ -27,7 +27,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const app = express();
-const PORT = parseInt(process.env.BACKOFFICE_PORT || '3003');
+const PORT = parseInt(process.env.PORT || process.env.BACKOFFICE_PORT || '3003');
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));

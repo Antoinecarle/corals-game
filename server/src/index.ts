@@ -12,7 +12,7 @@ import { ZoneRoom } from './rooms/ZoneRoom.js';
 import { LobbyRoom } from './rooms/LobbyRoom.js';
 import { zoneManager } from './systems/ZoneManager.js';
 
-const PORT = parseInt(process.env.GAME_PORT || '3001', 10);
+const PORT = parseInt(process.env.PORT || process.env.GAME_PORT || '3001', 10);
 
 async function main(): Promise<void> {
   // Run database migrations
